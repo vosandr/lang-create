@@ -1,5 +1,6 @@
 
 import ExpressionNode from "./AST/ExpressionNode";
+import NumberNode from "./AST/NumberNode";
 import StatementsNode from "./AST/StatementsNode";
 import Token from "./Token";
 import TokenType, { tokenTypesList } from "./TokenType";
@@ -34,7 +35,11 @@ export default class Parser {
   }
 
   parseVariableOrNumber(): ExpressionNode {
-    
+    const number = this.match(tokenTypesList.NUMBER);
+    if(number!= null) {
+      return NumberNode;
+    }
+    const variable = this.match()
   }
   parseExpression(): ExpressionNode {
     if(this.match(tokenTypesList.VARIABLE)==null) {

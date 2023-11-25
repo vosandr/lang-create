@@ -1,7 +1,11 @@
 
-import ExpressionNode from "./AST/ExpressionNode";
+import { validateHeaderName } from "http";
+import BinOperationNode from "./AST/BinOperationNode";
+import ExpressionNode from "./AST/ExpressionNode"
 import NumberNode from "./AST/NumberNode";
 import StatementsNode from "./AST/StatementsNode";
+import UnarOperationNode from "./AST/UnarOperationNode";
+import VariableNode from "./AST/VariableNode";
 import Token from "./Token";
 import TokenType, { tokenTypesList } from "./TokenType";
 
@@ -37,10 +41,44 @@ export default class Parser {
   parseVariableOrNumber(): ExpressionNode {
     const number = this.match(tokenTypesList.NUMBER);
     if(number!= null) {
-      return NumberNode;
+      return new NumberNode(number);
     }
-    const variable = this.match()
+    const variable = this.match(tokenTypesList.VARIABLE);
+    if(variable!=null) {
+      return new VariableNode(variable);
+    }
+    throw new Error(`Ожидается переменная или число на ${this.pos} позиции`);
   }
+
+  parsePrint(): ExpressionNode {
+    const operatorLog = this.match(tokenTypesList.LOG);
+    if(operatorLog!=null) {
+      return new UnarOperationNode(operatorLog, this.parseFormula())
+    }
+    throw new Error(`Ожидается унарный оператор КОНСОЛЬ на ${this.pos} позиции`);
+  }
+  parseParentheses(): ExpressionNode {
+    if(this.match(tokenTypesList.LPAR)!=null) {
+      const node = this.parseFormula();
+      this.require(tokenTypesList.RPAR);
+      return node;
+    } else {
+      return this.parseVariableOrNumber();
+    }
+  
+  }
+
+  parseFormula(): ExpressionNode {
+    let leftNode = this.parseParentheses();
+    let operator = this.match(tokenTypesList.MINUS, tokenTypesList.PLUS);
+    while(operator != null) {
+      const rightNode= this.parseParentheses();
+      const leftNode = new BinOperationNode(operator, leftNode, rightNode)
+      operator=this.match(tokenTypesList.MINUS, tokenTypesList.PLUS);
+    }
+    return leftNode;
+  }
+
   parseExpression(): ExpressionNode {
     if(this.match(tokenTypesList.VARIABLE)==null) {
       const printNode = this.parsePrint();
@@ -50,10 +88,13 @@ export default class Parser {
     let variableNode=this.parseVariableOrNumber();
     const assignOperator = this.match(tokenTypesList.ASSIGN);
     if(assignOperator!=null) {
-
+      const rightFormulaNode = this.parseFormula();
+      const binaryNode=new BinOperationNode(assignOperator, variableNode, rightFormulaNode);
+      return binaryNode;
     }
     throw new Error(`После переменной ожидается оператор присвоения на позиции ${this.pos}`);
   }
+
   parseCode(): ExpressionNode {
     const root = new StatementsNode();
     while (this.pos<this.tokens.length) {
@@ -62,5 +103,41 @@ export default class Parser {
       root.addNode(codeStringsNode);
     }
     return root;
+  }
+
+  run(node: ExpressionNode): any {
+    switch (true){
+      case node instanceof NumberNode:
+        return parseInt(node.number.text);
+      case node instanceof UnarOperationNode:
+        node.operator.type.name===tokenTypesList.LOG.name&&
+        console.log(this.run(node.operand));
+        return;
+      case node instanceof BinOperationNode:
+        switch (node.operator.type.name) {
+          case tokenTypesList.LOG.name:
+            return this.run(node.leftNode)+this.run(node.rightNode)
+          case tokenTypesList.MINUS.name:
+            return this.run(node.leftNode)+this.run(node.rightNode);
+          case tokenTypesList.ASSIGN.name:
+            const result = this.run(node.rightNode);
+            const variableNode=<VariableNode>node.leftNode;
+            this.scope[variableNode.variable.text] = result;
+            return result;
+        }
+      case node instanceof VariableNode:
+        if(this.scope[node.variable.text]){
+          return this.scope[node.variable.text]
+        } else {
+          throw new Error(`Переменная с названием ${node.variable.text} не обнаружена`)
+        }
+      case node instanceof StatementsNode:
+        node.codeStrings.forEach(codeString=>{
+          this.run(codeString);
+        })
+        return;
+      default:
+        throw new Error(`Ошибка`);
+    }
   }
 }
